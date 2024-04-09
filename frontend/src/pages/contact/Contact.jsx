@@ -1,59 +1,152 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-refresh/only-export-components */
-import React, { useState } from 'react';
-import { useLoaderData } from 'react-router-dom';
-import { getContact } from '../../allContacts';
+import React, { useEffect, useReducer, useRef, useState } from 'react';
+import { useLoaderData, useParams } from 'react-router-dom';
 import Header from '../../components/chat/Header';
 import Message from '../../components/chat/Message';
 import InsertEmoticonIcon from '@mui/icons-material/InsertEmoticon';
 import { Icon, IconButton } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import SendIcon from '@mui/icons-material/Send';
+import axios from 'axios';
+import URI from '../../config';
+import Pusher from 'pusher-js';
 
+const token = JSON.parse(localStorage?.getItem('token'));
 export async function loader({ params }) {
-  const contactPerson = await getContact(params.contactId);
-  return { contactPerson };
+  const JWT_Token = JSON.parse(localStorage?.getItem('token'));
+  const response = axios.post(
+    `${URI}/users/verify`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${JWT_Token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  const { data } = (await response).data;
+  const senderInfo = data;
+  const response2 = await axios.get(
+    `${URI}/users/receiver/${params.receiverId}`
+  );
+  const receiverInfo = (await response2).data;
+  return { receiverInfo, senderInfo };
 }
 
 function Contact() {
-  const { contactPerson } = useLoaderData();
+  const { receiverInfo, senderInfo } = useLoaderData();
+  const [message, setMessage] = useState('');
+  const [errorAlert, setErrorAlert] = useState(false);
+  const [msgArr, setMsgArr] = useState([]);
+  const [isMessageChanged, setIsMessageChanged] = useState(false);
 
-  const [message, setMessage] = useState();
+  const inputRef = useRef(null);
+  const scrollableDiv = useRef(null);
+
+  let { receiverId } = useParams();
+  
+  if (scrollableDiv.current !== null) {
+    scrollableDiv.current.scrollTop = scrollableDiv.current.scrollHeight;
+  }
+
+  // console.log(receiverInfo);
+  // console.log("sender: " + senderInfo?.username + "  " + "receiver: " + receiverInfo?.data.username);
+  useEffect(() => {
+    console.log("useEffect 1");
+    async function SyncMessage() {
+      const response = await axios.get(`${URI}/messages/sync/${receiverId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const { data } = response.data;
+      let newData = data.map((data) => ({
+        message: data.content,
+        sender: data.senderDetails.username,
+        receiver: data.receiverDetails.username,
+        timestamp: data.createdAt,
+        id: data._id,
+      }));
+      setMsgArr(newData);
+      setIsMessageChanged(true);    
+    }
+    SyncMessage();
+    scrollableDiv.current.scrollTop = scrollableDiv.current.scrollHeight;
+  }, [receiverId]);
+
+  useEffect(() => {
+    console.log("useEffect 2");
+    var pusher = new Pusher('615276f32877e0dd5e82', {
+      cluster: 'sa1',
+    });
+    var channel = pusher.subscribe('messages');
+    channel.bind('inserted', function (data) {
+      setMsgArr((prevMsg) => [
+        ...prevMsg,
+        {
+          receiver: receiverInfo.data.username,
+          sender: senderInfo?.username,
+          message: data.content,
+          id: data._id,
+          timestamp: data.timestamp,
+        },
+      ]);
+    });
+
+    scrollableDiv.current.scrollTop = scrollableDiv.current.scrollHeight;
+
+    return () => {
+      channel.unbind_all();
+      channel.unsubscribe();
+    };
+  }, [msgArr]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-  };
+    if (message.length == 0) {
+      setErrorAlert(true);
+      inputRef.current.focus();
+      return;
+    }
+    async function sendMessage() {
+      await axios.post(
+        `${URI}/messages/new`,
+        {
+          content: message,
+          receiverId: receiverInfo?.data?._id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+    }
 
+    sendMessage();    
+    setIsMessageChanged((prevState) => !prevState);
+    inputRef.current.focus();
+    setMessage('');
+  };
+  console.log("msgArr: ", msgArr);
   return (
     <>
-      <Header details={contactPerson} />
+      <Header userInfo={receiverInfo.data} />
       <div
         className='chat_body overflow-scroll '
         style={{
-          maxHeight: 'calc(95vh - 114px)',
+          height: 'calc(95vh - 114px)',
         }}
       >
         <div
           className='chat__area h-full bg-[#E1D7CF] p-2 pb-2 overflow-scroll'
           style={{ overflow: 'scroll' }}
+          ref={scrollableDiv}
         >
-          {[
-            false,
-            true,
-            true,
-            false,
-            false,
-            true,
-            true,
-            false,
-            false,
-            true,
-            true,
-            false,
-            false,
-            true,
-            true,
-            false,
-          ].map((value, index) => (
-            <Message key={index} reciever={value} details={contactPerson} />
+          {msgArr?.map((data) => (
+            <Message key={data.id} data={data} />
           ))}
           <style>
             {`
@@ -76,9 +169,13 @@ function Contact() {
           </div>
           <input
             type='text'
-            className='w-full p-1 rounded-full py-2 ps-10'
+            className={`w-full p-1 rounded-full outline-none py-2 ps-10 ${
+              errorAlert && 'border border-red-500'
+            }`}
+            ref={inputRef}
             value={message}
             onChange={(e) => {
+              setErrorAlert(false);
               setMessage(e.target.value);
             }}
           />

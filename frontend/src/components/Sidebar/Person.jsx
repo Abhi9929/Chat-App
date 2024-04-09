@@ -38,18 +38,19 @@ function stringAvatar(name) {
   };
 }
 
-function Person({ person }) {
+function Person({ info }) {
+  // console.log(info);
   return (
-    <li key={person.id} className='my-2'>
-      <Link
-        to={`contacts/:${person.id}`}
+    <li className='my-2'>
+      <Link 
+        to={`contacts/:${info._id}`}
         className='hover:bg-slate-200 w-full flex px-2 py-1 capitalize '
       >
         <div className='flex gap-3 items-start'>
-          <Avatar className='relative top-1' {...stringAvatar(person.first)} />
+          <Avatar className='relative top-1' {...stringAvatar(info.username)} />
           <div className=' flex flex-col'>
             <div className='name text-lg'>
-              {person.first ? <>{person.first}</> : <i>No Name</i>}
+              {info.username ? <>{info.username}</> : <i>No Name</i>}
             </div>
             <div className="message text-[12px] text-slate-700 ">
               this is the last message
